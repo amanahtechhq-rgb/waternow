@@ -13,9 +13,14 @@ export default function StockMarketAdmin() {
   const [problems, setProblems] = useState<any[]>([]);
   const [sellers, setSellers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tickerTime, setTickerTime] = useState(new Date().toLocaleTimeString());
+  
+  // FIX: Initialized as empty string to avoid Next.js hydration error
+  const [tickerTime, setTickerTime] = useState('');
 
   useEffect(() => {
+    // FIX: Set the time only after the component mounts on the client
+    setTickerTime(new Date().toLocaleTimeString());
+
     if (isAuthenticated) {
       fetchData();
       const interval = setInterval(() => setTickerTime(new Date().toLocaleTimeString()), 10000);
