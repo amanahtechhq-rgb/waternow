@@ -1,13 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js'; // Hardcoded Supabase import
 import { Moon, Sun, ShieldAlert, Loader2, Crown, MessageSquare, ThumbsUp, Send, Calendar } from 'lucide-react';
 import Script from 'next/script';
 
 declare global {
   interface Window { PaystackPop: any; }
 }
+
+// 🔥 HARDCODED SUPABASE KEYS (Temporary fix for Vercel issue)
+const supabaseUrl = 'https://udhzthqswvgbklmhkmzj.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHp0aHFzd3ZnYmtsbWtobXpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM3MTI4NDksImV4cCI6MjEwOTI4ODg0OX0.E-r7y4RVq9sNfGcl2e7N25oRnuoWfdlVgteP3mtmUfQ';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 type Hostel = { id: string; name: string };
 type Suggestion = { id: string; title: string; votes: number };
@@ -24,18 +29,17 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   
-  // Subscription State
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subDays, setSubDays] = useState('5');
 
-  // Community State
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [newSuggestion, setNewSuggestion] = useState('');
   const [posting, setPosting] = useState(false);
 
   const PRICE_PER_DRUM = 3.0;
-  // We are using the Environment Variable directly
-  const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!;
+  
+  // 🔥 HARDCODED PAYSTACK KEY (Temporary fix for Vercel issue)
+  const PAYSTACK_PUBLIC_KEY = 'pk_live_b0f896380e67a59dc530e54d85b8ac76a6070fd4';
 
   useEffect(() => {
     fetchHostels();
@@ -43,23 +47,14 @@ export default function Home() {
   }, []);
 
   async function fetchHostels() {
-    try {
-      const { data, error } = await supabase.from('hostels').select('id, name').order('name');
-      if (error) throw error;
-      if (data) setHostels(data);
-    } catch (err) {
-      console.error("Failed to load hostels:", err);
-    }
+    const { data, error } = await supabase.from('hostels').select('id, name').order('name');
+    if (error) console.error("Hostel Fetch Error:", error);
+    if (data) setHostels(data);
   }
 
   async function fetchSuggestions() {
-    try {
-      const { data, error } = await supabase.from('suggestions').select('*').order('votes', { ascending: false });
-      if (error) throw error;
-      if (data) setSuggestions(data);
-    } catch (err) {
-      console.error("Failed to load suggestions:", err);
-    }
+    const { data } = await supabase.from('suggestions').select('*').order('votes', { ascending: false });
+    if (data) setSuggestions(data);
   }
 
   async function handleOrder() {
@@ -70,39 +65,20 @@ export default function Home() {
     setLoading(true);
     try {
       let hostelId = selectedHostel;
-
-      // 1. Auto-add hostel if custom
       if (showCustomHostel && customHostel.trim()) {
         const { data: newHostel, error: hostelErr } = await supabase
-          .from('hostels')
-          .insert({ name: customHostel.trim(), status: 'pending' })
-          .select('id')
-          .single();
-        
-        if (hostelErr) {
-          console.error("Hostel insert error:", hostelErr);
-          throw new Error("Could not save hostel: " + hostelErr.message);
-        }
+          .from('hostels').insert({ name: customHostel.trim(), status: 'pending' }).select('id').single();
+        if (hostelErr) throw new Error("Database failed to save hostel. Check Supabase RLS.");
         hostelId = newHostel.id;
       }
 
       const total = drums * PRICE_PER_DRUM;
-
-      // 2. Create Order in Supabase
-      const { error: orderErr } = await supabase.from('orders').insert({
-        hostel_id: hostelId, 
-        drums, 
-        phone, 
-        total_price: total, 
-        status: 'pending_payment',
+      
+      const { error: orderError } = await supabase.from('orders').insert({
+        hostel_id: hostelId, drums, phone, total_price: total, status: 'pending_payment',
       });
+      if (orderError) throw new Error("Database failed to save order. Check Supabase RLS.");
 
-      if (orderErr) {
-        console.error("Order insert error:", orderErr);
-        throw new Error("Database connection failed: " + orderErr.message);
-      }
-
-      // 3. Open Paystack
       if (typeof window !== 'undefined' && window.PaystackPop) {
         const handler = window.PaystackPop.setup({
           key: PAYSTACK_PUBLIC_KEY,
@@ -110,27 +86,22 @@ export default function Home() {
           amount: total * 100, 
           currency: 'GHS',
           phone: phone,
-          subaccount: 'ACCT_ecgr6t0kkb6dj7a', // Your real Paystack Subaccount Code
-          transaction_charge: 50, // Your GHS 0.50 profit in pesewas
-          bearer: 'subaccount',
           callback: function (response: any) {
             setMessage(`✅ Payment Successful! Ref: ${response.reference}`);
             setDrums(1); setPhone(''); setCustomHostel(''); setSelectedHostel(''); setShowCustomHostel(false);
             setLoading(false);
           },
           onClose: function () {
-            setMessage('❌ Payment window closed.'); 
-            setLoading(false);
+            setMessage('❌ Payment window closed.'); setLoading(false);
           },
         });
         handler.openIframe();
       } else {
-        throw new Error("Paystack script not loaded. Check your internet connection.");
+        throw new Error("Paystack library not loaded. Check internet.");
       }
-
     } catch (err: any) {
-      console.error("🚨 FULL ERROR DETAILS:", err); // THIS WILL SHOW IN CONSOLE
-      setMessage('❌ ' + (err.message || 'Something went wrong. Please check console.'));
+      console.error("🚨 FULL ERROR:", err);
+      setMessage('❌ ' + (err.message || 'Something went wrong.'));
       setLoading(false);
     }
   }
@@ -138,13 +109,9 @@ export default function Home() {
   async function submitSuggestion() {
     if (!newSuggestion.trim()) return;
     setPosting(true);
-    try {
-      await supabase.from('suggestions').insert({ title: newSuggestion, votes: 1 });
-      setNewSuggestion('');
-      fetchSuggestions();
-    } catch (err) {
-      console.error(err);
-    }
+    await supabase.from('suggestions').insert({ title: newSuggestion, votes: 1 });
+    setNewSuggestion('');
+    fetchSuggestions();
     setPosting(false);
   }
 
@@ -159,7 +126,6 @@ export default function Home() {
       
       <div className="min-h-screen bg-slate-50 dark:bg-[#0A1931] text-slate-900 dark:text-white transition-colors pb-20 relative font-sans">
         
-        {/* Header */}
         <div className="bg-[#0A1931] text-white shadow-lg sticky top-0 z-10 px-5 py-4 border-b-2 border-[#FFD700]">
           <div className="max-w-md mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -179,7 +145,6 @@ export default function Home() {
 
         <div className="max-w-md mx-auto px-5 py-6">
           
-          {/* Order Card */}
           <div className="bg-white dark:bg-[#13294B] p-5 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 mb-8">
             <div className="flex gap-3 p-3 mb-5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
               <ShieldAlert className="text-amber-600 shrink-0 mt-0.5" size={16} />
@@ -224,7 +189,6 @@ export default function Home() {
               <span className="bg-[#1E90FF] text-white font-bold px-3 py-1 rounded-lg">{drums}</span>
             </div>
 
-            {/* Auto Delivery */}
             <div className="mb-4 bg-blue-50 dark:bg-[#0A1931] p-3 rounded-xl border border-blue-100 dark:border-slate-700">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1">
@@ -276,7 +240,6 @@ export default function Home() {
             {message && <p className="mt-4 text-center text-sm font-bold p-2 bg-slate-100 dark:bg-[#0A1931] rounded-lg">{message}</p>}
           </div>
 
-          {/* Community Board */}
           <div className="bg-white dark:bg-[#13294B] p-5 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 mb-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
               <MessageSquare className="text-[#1E90FF]" size={20} /> Community Board
@@ -304,7 +267,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* WhatsApp Links */}
           <div className="text-center pb-8">
             <p className="text-xs text-slate-500 mb-3 font-bold uppercase tracking-widest">Join the Royal Community</p>
             <div className="flex justify-center gap-3">
@@ -316,17 +278,14 @@ export default function Home() {
               </a>
             </div>
           </div>
-
         </div>
 
-        {/* 👑 PRINCESS AI FLOATING BUTTON */}
         <button 
-          onClick={() => alert("👑 Welcome Royal! I am Princess AI.\n\nWhat do you need today?\n\n💧 Order Water\n👑 Check My Space\n📝 Drop Problem\n🚌 Book Bus")}
+          onClick={() => alert("👑 Welcome Royal! I am Princess AI.")}
           className="fixed bottom-6 right-6 bg-gradient-to-r from-[#FFD700] to-yellow-500 text-[#0A1930] p-4 rounded-full shadow-[0_0_20px_rgba(255,215,0,0.6)] hover:scale-110 transition-transform z-50 flex items-center justify-center border-2 border-white"
         >
           <Crown size={28} />
         </button>
-
       </div>
     </main>
   );
