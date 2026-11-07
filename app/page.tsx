@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Moon, Sun, ShieldAlert, Loader2, Crown, MessageSquare, ThumbsUp, Send, Calendar, User } from 'lucide-react';
+import { Moon, Sun, ShieldAlert, Loader2, Crown, MessageSquare, ThumbsUp, Send, Calendar, User, Truck, CheckCircle } from 'lucide-react';
 import Script from 'next/script';
 import Link from 'next/link';
 
@@ -11,20 +11,24 @@ declare global {
 }
 
 type Hostel = { id: string; name: string };
+type Driver = { id: string; full_name: string }; // Now pulling from profiles
 type Suggestion = { id: string; title: string; votes: number };
 
 export default function Home() {
   const [dark, setDark] = useState(false);
   const [hostels, setHostels] = useState<Hostel[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [myOrders, setMyOrders] = useState<any[]>([]);
+  
   const [selectedHostel, setSelectedHostel] = useState('');
+  const [selectedDriver, setSelectedDriver] = useState('');
   const [showCustomHostel, setShowCustomHostel] = useState(false);
   const [customHostel, setCustomHostel] = useState('');
   const [drums, setDrums] = useState(1);
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [isSubscribed, setIsSubscribed] = useState(false);
-  const [subDays, setSubDays] = useState('5');
+  
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [newSuggestion, setNewSuggestion] = useState('');
   const [posting, setPosting] = useState(false);
@@ -34,7 +38,9 @@ export default function Home() {
 
   useEffect(() => {
     fetchHostels();
+    fetchDrivers();
     fetchSuggestions();
+    fetchMyOrders();
   }, []);
 
   async function fetchHostels() {
@@ -42,15 +48,28 @@ export default function Home() {
     if (data) setHostels(data);
   }
 
+  async function fetchDrivers() {
+    // Pull REAL drivers who registered via the Login page
+    const { data } = await supabase.from('profiles').select('id, full_name').eq('role', 'driver');
+    if (data) setDrivers(data);
+  }
+
   async function fetchSuggestions() {
     const { data } = await supabase.from('suggestions').select('*').order('votes', { ascending: false });
     if (data) setSuggestions(data);
+  }
+
+  async function fetchMyOrders() {
+    // For MVP without forced student login, fetch recent orders to show the confirm button
+    const { data } = await supabase.from('orders').select('*, hostels(name), profiles(full_name)').order('created_at', { ascending: false }).limit(5);
+    if (data) setMyOrders(data);
   }
 
   async function handleOrder() {
     setMessage('');
     if (!phone || phone.length < 10) return setMessage('Enter a valid phone number.');
     if (!selectedHostel && !customHostel.trim()) return setMessage('Select or enter your hostel.');
+    if (!selectedDriver) return setMessage('Please select a driver.');
 
     setLoading(true);
     try {
@@ -63,21 +82,28 @@ export default function Home() {
       }
 
       const total = drums * PRICE_PER_DRUM;
+      // Save driver_id (from profiles) into orders table
       const { error: orderError } = await supabase.from('orders').insert({
-        hostel_id: hostelId, drums, phone, total_price: total, status: 'pending_payment',
+        hostel_id: hostelId, 
+        driver_id: selectedDriver, // Linked to real profile
+        drums, 
+        phone, 
+        total_price: total, 
+        status: 'pending_payment',
       });
       if (orderError) throw new Error("Database failed to save order.");
 
       if (typeof window !== 'undefined' && window.PaystackPop) {
         const handler = window.PaystackPop.setup({
           key: PAYSTACK_PUBLIC_KEY,
-          email: 'guest@waternow.com', // Default guest email
+          email: 'guest@waternow.com',
           amount: total * 100, 
           currency: 'GHS',
           phone: phone,
           callback: function (response: any) {
-            setMessage(`✅ Payment Successful! Ref: ${response.reference}`);
-            setDrums(1); setPhone(''); setCustomHostel(''); setSelectedHostel(''); setShowCustomHostel(false);
+            setMessage(`✅ Payment Successful! Water is on the way.`);
+            setDrums(1); setPhone(''); setCustomHostel(''); setSelectedHostel(''); setShowCustomHostel(false); setSelectedDriver('');
+            fetchMyOrders();
             setLoading(false);
           },
           onClose: function () {
@@ -89,6 +115,15 @@ export default function Home() {
     } catch (err: any) {
       setMessage('❌ ' + (err.message || 'Something went wrong.'));
       setLoading(false);
+    }
+  }
+
+  // This is the Escrow Release Button
+  async function confirmDelivery(orderId: string) {
+    const { error } = await supabase.from('orders').update({ status: 'delivered' }).eq('id', orderId);
+    if (!error) {
+      alert("Delivery Confirmed! The driver has been paid.");
+      fetchMyOrders();
     }
   }
 
@@ -122,7 +157,7 @@ export default function Home() {
               </div>
             </div>
             <div className="flex gap-2">
-               <Link href="/login" className="p-2 rounded-full bg-[#13294B] border border-slate-600 hover:border-[#FFD700]">
+              <Link href="/login" className="p-2 rounded-full bg-[#13294B] border border-slate-600 hover:border-[#FFD700]">
                 <User size={18} className="text-[#FFD700]" />
               </Link>
               <button onClick={() => setDark(!dark)} className="p-2 rounded-full bg-[#13294B] border border-slate-600 hover:border-[#FFD700]">
@@ -138,7 +173,7 @@ export default function Home() {
             <div className="flex gap-3 p-3 mb-5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
               <ShieldAlert className="text-amber-600 shrink-0 mt-0.5" size={16} />
               <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
-                <strong>Escrow Protection:</strong> Driver gets paid only after you confirm delivery within 90 mins.
+                <strong>Escrow Protection:</strong> Your money is held safely. Driver gets paid only after you click "Confirm Delivery".
               </p>
             </div>
 
@@ -168,6 +203,17 @@ export default function Home() {
               />
             )}
 
+            {/* REAL DRIVER SELECTION */}
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase mt-2">Choose Your Driver</label>
+            <select
+              value={selectedDriver}
+              onChange={(e) => setSelectedDriver(e.target.value)}
+              className="w-full p-3 rounded-xl bg-slate-50 dark:bg-[#0A1931] border border-slate-200 dark:border-slate-700 mb-4 font-medium"
+            >
+              <option value="">Select driver...</option>
+              {drivers.map((d) => <option key={d.id} value={d.id}>{d.full_name}</option>)}
+            </select>
+
             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Quantity (Drums)</label>
             <div className="flex items-center gap-4 mb-4">
               <input
@@ -176,20 +222,6 @@ export default function Home() {
                 className="w-full accent-[#1E90FF]"
               />
               <span className="bg-[#1E90FF] text-white font-bold px-3 py-1 rounded-lg">{drums}</span>
-            </div>
-
-            <div className="mb-4 bg-blue-50 dark:bg-[#0A1931] p-3 rounded-xl border border-blue-100 dark:border-slate-700">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1">
-                  <Calendar size={14} /> Auto-Delivery
-                </span>
-                <input 
-                  type="checkbox" 
-                  checked={isSubscribed} 
-                  onChange={(e) => setIsSubscribed(e.target.checked)}
-                  className="w-4 h-4 accent-[#1E90FF]" 
-                />
-              </div>
             </div>
 
             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Phone Number</label>
@@ -214,40 +246,36 @@ export default function Home() {
             {message && <p className="mt-4 text-center text-sm font-bold p-2 bg-slate-100 dark:bg-[#0A1931] rounded-lg">{message}</p>}
           </div>
 
-          <div className="bg-white dark:bg-[#13294B] p-5 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 mb-6">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <MessageSquare className="text-[#1E90FF]" size={20} /> Community Board
-            </h2>
-            <div className="flex gap-2 mb-6">
-              <input
-                type="text" placeholder="I need a bus to Kumasi..."
-                value={newSuggestion} onChange={(e) => setNewSuggestion(e.target.value)}
-                className="flex-1 p-3 rounded-xl bg-slate-50 dark:bg-[#0A1931] border border-slate-200 dark:border-slate-700 text-sm"
-              />
-              <button onClick={submitSuggestion} disabled={posting} className="bg-[#1E90FF] text-white p-3 rounded-xl disabled:opacity-50">
-                {posting ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
-              </button>
+          {/* MY ORDERS - ESCROW CONFIRMATION */}
+          {myOrders.length > 0 && (
+            <div className="bg-white dark:bg-[#13294B] p-5 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 mb-8">
+              <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <Truck className="text-[#1E90FF]" size={20} /> My Recent Orders
+              </h2>
+              <div className="space-y-3">
+                {myOrders.map((order) => (
+                  <div key={order.id} className="flex flex-col p-3 bg-slate-50 dark:bg-[#0A1931] rounded-xl border border-slate-200 dark:border-slate-700">
+                    <div className="flex justify-between items-center mb-1">
+                      <p className="text-sm font-bold">{order.hostels?.name} ({order.drums} Drums)</p>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${order.status === 'delivered' ? 'bg-green-500/20 text-green-500' : 'bg-amber-500/20 text-amber-500'}`}>
+                        {order.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-2">Driver: {order.profiles?.full_name || 'Assigned'}</p>
+                    
+                    {/* The Escrow Release Button */}
+                    {order.status !== 'delivered' && (
+                      <button onClick={() => confirmDelivery(order.id)} className="mt-2 bg-green-500 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2">
+                        <CheckCircle size={16} /> Confirm Delivery & Release Funds
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="space-y-3">
-              {suggestions.map((s) => (
-                <div key={s.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-[#0A1931] rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-sm font-medium pr-4">{s.title}</p>
-                  <button onClick={() => upvote(s.id, s.votes)} className="flex flex-col items-center justify-center bg-white dark:bg-[#13294B] px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-[#1E90FF]">
-                    <ThumbsUp size={14} className="text-[#1E90FF] mb-1" />
-                    <span className="text-xs font-bold">{s.votes}</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+          )}
 
-        <button 
-          onClick={() => alert("👑 Welcome Royal! I am Princess AI.")}
-          className="fixed bottom-6 right-6 bg-gradient-to-r from-[#FFD700] to-yellow-500 text-[#0A1930] p-4 rounded-full shadow-[0_0_20px_rgba(255,215,0,0.6)] hover:scale-110 transition-transform z-50 flex items-center justify-center border-2 border-white"
-        >
-          <Crown size={28} />
-        </button>
+        </div>
       </div>
     </main>
   );
