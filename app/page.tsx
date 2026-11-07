@@ -16,7 +16,6 @@ export default function Login() {
   const [role, setRole] = useState('student');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
   const router = useRouter();
 
   // Helper to format phone numbers into fake emails for Supabase
@@ -32,7 +31,6 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setSuccessMsg('');
 
     const formattedEmail = formatEmail(emailOrPhone);
 
@@ -45,10 +43,7 @@ export default function Login() {
         });
         
         if (signInError) {
-           if (signInError.message.includes('Invalid login credentials')) {
-             throw new Error("Incorrect password or account doesn't exist. Try signing up.");
-           }
-           throw signInError;
+           throw new Error("Incorrect password or number. Try signing up if you are new.");
         }
         
         if (data.user) {
@@ -58,23 +53,26 @@ export default function Login() {
         }
       } else {
         // SIGN UP
+        // 1. Check if phone number already exists BEFORE creating auth user
+        const { data: existingPhone } = await supabase.from('profiles').select('id').eq('phone', phone).single();
+        if (existingPhone) {
+          throw new Error("This phone number is already registered. Please Sign In instead.");
+        }
+
+        // 2. Create Auth User
         const { data: authData, error: authError } = await supabase.auth.signUp({ 
           email: formattedEmail, 
           password 
         });
 
         if (authError) {
-          if (authError.message.includes('already registered')) {
-            throw new Error("This number/email is already registered. Please Sign In.");
+          if (authError.message.includes('already registered') || authError.status === 422) {
+            throw new Error("This account already exists. Please Sign In.");
           }
           throw authError;
         }
 
-        // If Supabase returns a user but with empty identities, it means the email exists
-        if (authData.user && authData.user.identities && authData.user.identities.length === 0) {
-          throw new Error("This account already exists. Please Sign In.");
-        }
-
+        // 3. Create Profile
         if (authData.user) {
           const { error: profileError } = await supabase.from('profiles').insert({
             id: authData.user.id,
@@ -84,7 +82,13 @@ export default function Login() {
             hostel: hostel
           });
           
-          if (profileError) throw new Error("Database Error: " + profileError.message);
+          if (profileError) {
+             // Catch the unique constraint error just in case
+             if (profileError.code === '23505') { 
+                throw new Error("This phone number is already in use. Please Sign In.");
+             }
+             throw new Error("Database Error: " + profileError.message);
+          }
           
           if (role === 'driver') router.push('/driver');
           else router.push('/');
@@ -95,15 +99,6 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleForgotPassword = async () => {
-    if (!emailOrPhone) return setError('Enter your email or phone number first.');
-    setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(formatEmail(emailOrPhone));
-    setLoading(false);
-    if (error) setError(error.message);
-    else setSuccessMsg('Password reset link sent! (Check email if you used one).');
   };
 
   return (
@@ -128,7 +123,6 @@ export default function Login() {
         </h2>
 
         {error && <p className="bg-red-500/20 text-red-400 p-3 rounded-lg text-sm text-center mb-6 border border-red-500/50">{error}</p>}
-        {successMsg && <p className="bg-green-500/20 text-green-400 p-3 rounded-lg text-sm text-center mb-6 border border-green-500/50">{successMsg}</p>}
 
         <form onSubmit={handleAuth} className="space-y-4">
           
@@ -157,8 +151,8 @@ export default function Login() {
           )}
 
           <div>
-            <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Phone Number or Email</label>
-            <input type="text" required value={emailOrPhone} onChange={e => setEmailOrPhone(e.target.value)} className="w-full p-3 rounded-xl bg-[#0A1931] border border-slate-700 text-white focus:border-[#1E90FF] outline-none" placeholder="024XXXXXXX or email" />
+            <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Phone Number (or Email)</label>
+            <input type="text" required value={emailOrPhone} onChange={e => setEmailOrPhone(e.target.value)} className="w-full p-3 rounded-xl bg-[#0A1931] border border-slate-700 text-white focus:border-[#1E90FF] outline-none" placeholder="024XXXXXXX" />
           </div>
           
           <div>
@@ -172,14 +166,9 @@ export default function Login() {
         </form>
 
         <div className="mt-6 flex flex-col items-center gap-3">
-          <button type="button" onClick={() => { setIsLogin(!isLogin); setError(''); setSuccessMsg(''); }} className="text-sm text-slate-400 hover:text-[#FFD700] transition-colors">
+          <button type="button" onClick={() => { setIsLogin(!isLogin); setError(''); }} className="text-sm text-slate-400 hover:text-[#FFD700] transition-colors">
             {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
           </button>
-          {isLogin && (
-            <button type="button" onClick={handleForgotPassword} className="text-xs text-[#1E90FF] hover:underline">
-              Forgot Password?
-            </button>
-          )}
         </div>
       </div>
     </div>
