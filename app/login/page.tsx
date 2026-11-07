@@ -8,7 +8,7 @@ import Link from 'next/link';
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
+  const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -16,35 +16,64 @@ export default function Login() {
   const [role, setRole] = useState('student');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const router = useRouter();
+
+  // Helper to format phone numbers into fake emails for Supabase
+  const formatEmail = (input: string) => {
+    const cleanInput = input.trim();
+    if (/^[0-9+]+$/.test(cleanInput)) {
+      return `${cleanInput}@waternow.com`; // If phone number, add fake domain
+    }
+    return cleanInput; // If actual email, leave it
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccessMsg('');
+
+    const formattedEmail = formatEmail(emailOrPhone);
 
     try {
       if (isLogin) {
         // SIGN IN
-        const { error: signInError, data } = await supabase.auth.signInWithPassword({ email, password });
-        if (signInError) throw signInError;
+        const { error: signInError, data } = await supabase.auth.signInWithPassword({ 
+          email: formattedEmail, 
+          password 
+        });
+        
+        if (signInError) {
+           throw new Error("Incorrect password or number. Try signing up if you are new.");
+        }
         
         if (data.user) {
-          // Check if they are a driver or student
           const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single();
-          if (profile?.role === 'driver') {
-            router.push('/driver');
-          } else {
-            router.push('/');
-          }
+          if (profile?.role === 'driver') router.push('/driver');
+          else router.push('/');
         }
       } else {
         // SIGN UP
-        const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
-        if (authError) throw authError;
+        // Check if phone number is already in profiles table
+        const { data: existingPhone } = await supabase.from('profiles').select('id').eq('phone', phone).single();
+        if (existingPhone) {
+          throw new Error("This phone number is already registered. Please Sign In instead.");
+        }
+
+        const { data: authData, error: authError } = await supabase.auth.signUp({ 
+          email: formattedEmail, 
+          password 
+        });
+
+        if (authError) {
+          if (authError.message.includes('already registered') || authError.status === 422) {
+            throw new Error("This account already exists. Please Sign In.");
+          }
+          throw authError;
+        }
 
         if (authData.user) {
-          // Create Profile in Database
           const { error: profileError } = await supabase.from('profiles').insert({
             id: authData.user.id,
             role: role,
@@ -53,18 +82,19 @@ export default function Login() {
             hostel: hostel
           });
           
-          if (profileError) throw new Error("Database Error: " + profileError.message);
-          
-          // Log them in and redirect
-          if (role === 'driver') {
-            router.push('/driver');
-          } else {
-            router.push('/');
+          if (profileError) {
+             if (profileError.code === '23505') { // Unique violation
+                throw new Error("This phone number is already in use. Please Sign In.");
+             }
+             throw new Error("Database Error: " + profileError.message);
           }
+          
+          if (role === 'driver') router.push('/driver');
+          else router.push('/');
         }
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred during authentication.');
+      setError(err.message || 'An error occurred.');
     } finally {
       setLoading(false);
     }
@@ -92,6 +122,7 @@ export default function Login() {
         </h2>
 
         {error && <p className="bg-red-500/20 text-red-400 p-3 rounded-lg text-sm text-center mb-6 border border-red-500/50">{error}</p>}
+        {successMsg && <p className="bg-green-500/20 text-green-400 p-3 rounded-lg text-sm text-center mb-6 border border-green-500/50">{successMsg}</p>}
 
         <form onSubmit={handleAuth} className="space-y-4">
           
@@ -120,8 +151,8 @@ export default function Login() {
           )}
 
           <div>
-            <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Email Address</label>
-            <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 rounded-xl bg-[#0A1931] border border-slate-700 text-white focus:border-[#1E90FF] outline-none" placeholder="student@waternow.com" />
+            <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Phone Number (or Email)</label>
+            <input type="text" required value={emailOrPhone} onChange={e => setEmailOrPhone(e.target.value)} className="w-full p-3 rounded-xl bg-[#0A1931] border border-slate-700 text-white focus:border-[#1E90FF] outline-none" placeholder="024XXXXXXX" />
           </div>
           
           <div>
@@ -134,8 +165,8 @@ export default function Login() {
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <button type="button" onClick={() => { setIsLogin(!isLogin); setError(''); }} className="text-sm text-slate-400 hover:text-[#FFD700] transition-colors">
+        <div className="mt-6 flex flex-col items-center gap-3">
+          <button type="button" onClick={() => { setIsLogin(!isLogin); setError(''); setSuccessMsg(''); }} className="text-sm text-slate-400 hover:text-[#FFD700] transition-colors">
             {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
           </button>
         </div>
