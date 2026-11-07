@@ -1,24 +1,24 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@supabase/supabase-js'; // Hardcoded Supabase import
-import { Moon, Sun, ShieldAlert, Loader2, Crown, MessageSquare, ThumbsUp, Send, Calendar } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
+import { Moon, Sun, ShieldAlert, Loader2, Crown, MessageSquare, ThumbsUp, Send, Calendar, User, LogOut } from 'lucide-react';
 import Script from 'next/script';
+import Link from 'next/link';
 
 declare global {
   interface Window { PaystackPop: any; }
 }
 
-// 🔥 HARDCODED SUPABASE KEYS (Temporary fix for Vercel issue)
-const supabaseUrl = 'https://udhzthqswvgbklmhkmzj.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHp0aHFzd3ZnYmtsbWtobXpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM3MTI4NDksImV4cCI6MjEwOTI4ODg0OX0.E-r7y4RVq9sNfGcl2e7N25oRnuoWfdlVgteP3mtmUfQ';
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 type Hostel = { id: string; name: string };
 type Suggestion = { id: string; title: string; votes: number };
 
 export default function Home() {
+  const router = useRouter();
   const [dark, setDark] = useState(false);
+  const [session, setSession] = useState<any>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   
   const [hostels, setHostels] = useState<Hostel[]>([]);
   const [selectedHostel, setSelectedHostel] = useState('');
@@ -28,33 +28,49 @@ export default function Home() {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subDays, setSubDays] = useState('5');
-
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [newSuggestion, setNewSuggestion] = useState('');
   const [posting, setPosting] = useState(false);
 
   const PRICE_PER_DRUM = 3.0;
-  
-  // 🔥 HARDCODED PAYSTACK KEY (Temporary fix for Vercel issue)
-  const PAYSTACK_PUBLIC_KEY = 'pk_live_b0f896380e67a59dc530e54d85b8ac76a6070fd4';
+  const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!;
 
   useEffect(() => {
-    fetchHostels();
-    fetchSuggestions();
-  }, []);
+    // 1. Check if user is logged in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        router.push('/login');
+      } else {
+        setSession(session);
+        // 2. Check role (Kick drivers out of student page)
+        supabase.from('profiles').select('role').eq('id', session.user.id).single().then(({ data }) => {
+          if (data?.role === 'driver') {
+            router.push('/driver');
+          } else {
+            setCheckingAuth(false);
+            fetchHostels();
+            fetchSuggestions();
+          }
+        });
+      }
+    });
+  }, [router]);
 
   async function fetchHostels() {
-    const { data, error } = await supabase.from('hostels').select('id, name').order('name');
-    if (error) console.error("Hostel Fetch Error:", error);
+    const { data } = await supabase.from('hostels').select('id, name').order('name');
     if (data) setHostels(data);
   }
 
   async function fetchSuggestions() {
     const { data } = await supabase.from('suggestions').select('*').order('votes', { ascending: false });
     if (data) setSuggestions(data);
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push('/login');
   }
 
   async function handleOrder() {
@@ -68,21 +84,20 @@ export default function Home() {
       if (showCustomHostel && customHostel.trim()) {
         const { data: newHostel, error: hostelErr } = await supabase
           .from('hostels').insert({ name: customHostel.trim(), status: 'pending' }).select('id').single();
-        if (hostelErr) throw new Error("Database failed to save hostel. Check Supabase RLS.");
+        if (hostelErr) throw new Error("Database failed to save hostel.");
         hostelId = newHostel.id;
       }
 
       const total = drums * PRICE_PER_DRUM;
-      
       const { error: orderError } = await supabase.from('orders').insert({
         hostel_id: hostelId, drums, phone, total_price: total, status: 'pending_payment',
       });
-      if (orderError) throw new Error("Database failed to save order. Check Supabase RLS.");
+      if (orderError) throw new Error("Database failed to save order.");
 
       if (typeof window !== 'undefined' && window.PaystackPop) {
         const handler = window.PaystackPop.setup({
           key: PAYSTACK_PUBLIC_KEY,
-          email: 'student@waternow.com',
+          email: session.user.email,
           amount: total * 100, 
           currency: 'GHS',
           phone: phone,
@@ -96,11 +111,8 @@ export default function Home() {
           },
         });
         handler.openIframe();
-      } else {
-        throw new Error("Paystack library not loaded. Check internet.");
       }
     } catch (err: any) {
-      console.error("🚨 FULL ERROR:", err);
       setMessage('❌ ' + (err.message || 'Something went wrong.'));
       setLoading(false);
     }
@@ -120,12 +132,16 @@ export default function Home() {
     fetchSuggestions();
   }
 
+  if (checkingAuth) {
+    return <div className="min-h-screen bg-[#0A1931] flex justify-center items-center"><Loader2 className="animate-spin text-[#1E90FF]" size={48}/></div>;
+  }
+
   return (
     <main className={dark ? 'dark' : ''}>
       <Script src="https://js.paystack.co/v1/inline.js" strategy="beforeInteractive" />
-      
       <div className="min-h-screen bg-slate-50 dark:bg-[#0A1931] text-slate-900 dark:text-white transition-colors pb-20 relative font-sans">
         
+        {/* Header */}
         <div className="bg-[#0A1931] text-white shadow-lg sticky top-0 z-10 px-5 py-4 border-b-2 border-[#FFD700]">
           <div className="max-w-md mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -134,12 +150,16 @@ export default function Home() {
               </div>
               <div>
                 <h1 className="text-lg font-black text-[#FFD700] tracking-widest uppercase">Amanah Tech</h1>
-                <p className="text-[10px] text-slate-300 tracking-widest uppercase">Amanah = Trust</p>
               </div>
             </div>
-            <button onClick={() => setDark(!dark)} className="p-2 rounded-full bg-[#13294B] border border-slate-600 hover:border-[#FFD700] transition-colors">
-              {dark ? <Sun size={18} className="text-[#FFD700]" /> : <Moon size={18} className="text-[#FFD700]" />}
-            </button>
+            <div className="flex gap-2">
+              <button onClick={handleLogout} className="p-2 rounded-full bg-[#13294B] border border-red-500/50 hover:bg-red-500/20 text-red-400">
+                <LogOut size={18} />
+              </button>
+              <button onClick={() => setDark(!dark)} className="p-2 rounded-full bg-[#13294B] border border-slate-600 hover:border-[#FFD700]">
+                {dark ? <Sun size={18} className="text-[#FFD700]" /> : <Moon size={18} className="text-[#FFD700]" />}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -239,53 +259,7 @@ export default function Home() {
             </button>
             {message && <p className="mt-4 text-center text-sm font-bold p-2 bg-slate-100 dark:bg-[#0A1931] rounded-lg">{message}</p>}
           </div>
-
-          <div className="bg-white dark:bg-[#13294B] p-5 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 mb-6">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <MessageSquare className="text-[#1E90FF]" size={20} /> Community Board
-            </h2>
-            <div className="flex gap-2 mb-6">
-              <input
-                type="text" placeholder="I need a bus to Kumasi..."
-                value={newSuggestion} onChange={(e) => setNewSuggestion(e.target.value)}
-                className="flex-1 p-3 rounded-xl bg-slate-50 dark:bg-[#0A1931] border border-slate-200 dark:border-slate-700 text-sm"
-              />
-              <button onClick={submitSuggestion} disabled={posting} className="bg-[#1E90FF] text-white p-3 rounded-xl disabled:opacity-50">
-                {posting ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
-              </button>
-            </div>
-            <div className="space-y-3">
-              {suggestions.map((s) => (
-                <div key={s.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-[#0A1931] rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-sm font-medium pr-4">{s.title}</p>
-                  <button onClick={() => upvote(s.id, s.votes)} className="flex flex-col items-center justify-center bg-white dark:bg-[#13294B] px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-[#1E90FF]">
-                    <ThumbsUp size={14} className="text-[#1E90FF] mb-1" />
-                    <span className="text-xs font-bold">{s.votes}</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="text-center pb-8">
-            <p className="text-xs text-slate-500 mb-3 font-bold uppercase tracking-widest">Join the Royal Community</p>
-            <div className="flex justify-center gap-3">
-              <a href="https://whatsapp.com/channel/0029Vb9B2beCxoB2aVHEkO1V" target="_blank" rel="noreferrer" className="text-xs bg-green-100 text-green-700 font-bold px-4 py-2 rounded-full border border-green-200 hover:bg-green-200 transition-colors">
-                WhatsApp Channel
-              </a>
-              <a href="https://chat.whatsapp.com/BU1TrgPslJFFV4A2BcuwpH" target="_blank" rel="noreferrer" className="text-xs bg-blue-100 text-blue-700 font-bold px-4 py-2 rounded-full border border-blue-200 hover:bg-blue-200 transition-colors">
-                Join Community
-              </a>
-            </div>
-          </div>
         </div>
-
-        <button 
-          onClick={() => alert("👑 Welcome Royal! I am Princess AI.")}
-          className="fixed bottom-6 right-6 bg-gradient-to-r from-[#FFD700] to-yellow-500 text-[#0A1930] p-4 rounded-full shadow-[0_0_20px_rgba(255,215,0,0.6)] hover:scale-110 transition-transform z-50 flex items-center justify-center border-2 border-white"
-        >
-          <Crown size={28} />
-        </button>
       </div>
     </main>
   );

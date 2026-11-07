@@ -26,15 +26,17 @@ export default function Login() {
     try {
       if (isLogin) {
         // SIGN IN
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        const { error: signInError, data } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
         
-        // Check role and redirect
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-          if (profile?.role === 'driver') router.push('/driver');
-          else router.push('/'); 
+        if (data.user) {
+          // Check if they are a driver or student
+          const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single();
+          if (profile?.role === 'driver') {
+            router.push('/driver');
+          } else {
+            router.push('/');
+          }
         }
       } else {
         // SIGN UP
@@ -50,10 +52,15 @@ export default function Login() {
             phone: phone,
             hostel: hostel
           });
-          if (profileError) throw profileError;
           
-          alert("Account created successfully! You can now log in.");
-          setIsLogin(true); // Switch to login mode
+          if (profileError) throw new Error("Database Error: " + profileError.message);
+          
+          // Log them in and redirect
+          if (role === 'driver') {
+            router.push('/driver');
+          } else {
+            router.push('/');
+          }
         }
       }
     } catch (err: any) {
@@ -65,11 +72,9 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-[#0A1931] flex flex-col items-center justify-center p-5 font-sans">
-      
-      {/* Back to Home Button */}
       <div className="w-full max-w-md mb-6">
         <Link href="/" className="text-slate-400 hover:text-[#FFD700] flex items-center gap-2 text-sm font-bold transition-colors">
-          <ArrowLeft size={16} /> Back to Store
+          <ArrowLeft size={16} /> Back to Home
         </Link>
       </div>
 
