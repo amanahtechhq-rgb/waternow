@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Moon, Sun, ShieldAlert, Loader2, Crown, MessageSquare, ThumbsUp, Send, Calendar, Phone } from 'lucide-react';
+import { Moon, Sun, ShieldAlert, Loader2, Crown, MessageSquare, ThumbsUp, Send, Calendar } from 'lucide-react';
 import Script from 'next/script';
 
 declare global {
@@ -24,14 +24,17 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   
+  // Subscription State
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subDays, setSubDays] = useState('5');
 
+  // Community State
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [newSuggestion, setNewSuggestion] = useState('');
   const [posting, setPosting] = useState(false);
 
   const PRICE_PER_DRUM = 3.0;
+  // We are using the Environment Variable directly
   const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!;
 
   useEffect(() => {
@@ -40,13 +43,23 @@ export default function Home() {
   }, []);
 
   async function fetchHostels() {
-    const { data } = await supabase.from('hostels').select('id, name').order('name');
-    if (data) setHostels(data);
+    try {
+      const { data, error } = await supabase.from('hostels').select('id, name').order('name');
+      if (error) throw error;
+      if (data) setHostels(data);
+    } catch (err) {
+      console.error("Failed to load hostels:", err);
+    }
   }
 
   async function fetchSuggestions() {
-    const { data } = await supabase.from('suggestions').select('*').order('votes', { ascending: false });
-    if (data) setSuggestions(data);
+    try {
+      const { data, error } = await supabase.from('suggestions').select('*').order('votes', { ascending: false });
+      if (error) throw error;
+      if (data) setSuggestions(data);
+    } catch (err) {
+      console.error("Failed to load suggestions:", err);
+    }
   }
 
   async function handleOrder() {
@@ -57,19 +70,39 @@ export default function Home() {
     setLoading(true);
     try {
       let hostelId = selectedHostel;
+
+      // 1. Auto-add hostel if custom
       if (showCustomHostel && customHostel.trim()) {
         const { data: newHostel, error: hostelErr } = await supabase
-          .from('hostels').insert({ name: customHostel.trim(), status: 'pending' }).select('id').single();
-        if (hostelErr) throw hostelErr;
+          .from('hostels')
+          .insert({ name: customHostel.trim(), status: 'pending' })
+          .select('id')
+          .single();
+        
+        if (hostelErr) {
+          console.error("Hostel insert error:", hostelErr);
+          throw new Error("Could not save hostel: " + hostelErr.message);
+        }
         hostelId = newHostel.id;
       }
 
       const total = drums * PRICE_PER_DRUM;
-      const { error } = await supabase.from('orders').insert({
-        hostel_id: hostelId, drums, phone, total_price: total, status: 'pending_payment',
-      });
-      if (error) throw error;
 
+      // 2. Create Order in Supabase
+      const { error: orderErr } = await supabase.from('orders').insert({
+        hostel_id: hostelId, 
+        drums, 
+        phone, 
+        total_price: total, 
+        status: 'pending_payment',
+      });
+
+      if (orderErr) {
+        console.error("Order insert error:", orderErr);
+        throw new Error("Database connection failed: " + orderErr.message);
+      }
+
+      // 3. Open Paystack
       if (typeof window !== 'undefined' && window.PaystackPop) {
         const handler = window.PaystackPop.setup({
           key: PAYSTACK_PUBLIC_KEY,
@@ -77,8 +110,8 @@ export default function Home() {
           amount: total * 100, 
           currency: 'GHS',
           phone: phone,
-          subaccount: 'ACCT_YOUR_DRIVER_CODE_HERE', // REPLACE THIS
-          transaction_charge: 50, 
+          subaccount: 'ACCT_ecgr6t0kkb6dj7a', // Your real Paystack Subaccount Code
+          transaction_charge: 50, // Your GHS 0.50 profit in pesewas
           bearer: 'subaccount',
           callback: function (response: any) {
             setMessage(`✅ Payment Successful! Ref: ${response.reference}`);
@@ -86,13 +119,18 @@ export default function Home() {
             setLoading(false);
           },
           onClose: function () {
-            setMessage('❌ Payment window closed.'); setLoading(false);
+            setMessage('❌ Payment window closed.'); 
+            setLoading(false);
           },
         });
         handler.openIframe();
+      } else {
+        throw new Error("Paystack script not loaded. Check your internet connection.");
       }
+
     } catch (err: any) {
-      setMessage('❌ ' + (err.message || 'Something went wrong.'));
+      console.error("🚨 FULL ERROR DETAILS:", err); // THIS WILL SHOW IN CONSOLE
+      setMessage('❌ ' + (err.message || 'Something went wrong. Please check console.'));
       setLoading(false);
     }
   }
@@ -100,9 +138,13 @@ export default function Home() {
   async function submitSuggestion() {
     if (!newSuggestion.trim()) return;
     setPosting(true);
-    await supabase.from('suggestions').insert({ title: newSuggestion, votes: 1 });
-    setNewSuggestion('');
-    fetchSuggestions();
+    try {
+      await supabase.from('suggestions').insert({ title: newSuggestion, votes: 1 });
+      setNewSuggestion('');
+      fetchSuggestions();
+    } catch (err) {
+      console.error(err);
+    }
     setPosting(false);
   }
 
@@ -117,7 +159,7 @@ export default function Home() {
       
       <div className="min-h-screen bg-slate-50 dark:bg-[#0A1931] text-slate-900 dark:text-white transition-colors pb-20 relative font-sans">
         
-        {/* 👑 Royal Header */}
+        {/* Header */}
         <div className="bg-[#0A1931] text-white shadow-lg sticky top-0 z-10 px-5 py-4 border-b-2 border-[#FFD700]">
           <div className="max-w-md mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -137,18 +179,6 @@ export default function Home() {
 
         <div className="max-w-md mx-auto px-5 py-6">
           
-          {/* My Space (Teaser) */}
-          <div className="bg-white dark:bg-[#13294B] p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-[#FFD700]/30 mb-6 flex items-center justify-between">
-             <div>
-               <p className="text-xs text-slate-500 font-bold uppercase">Welcome Back</p>
-               <h2 className="text-lg font-black text-[#0A1931] dark:text-white">Royal Guest 👑</h2>
-             </div>
-             <div className="text-right">
-               <p className="text-xs text-slate-500 font-bold uppercase">Rank 10</p>
-               <p className="text-sm font-bold text-[#FFD700]">Newcomer</p>
-             </div>
-          </div>
-
           {/* Order Card */}
           <div className="bg-white dark:bg-[#13294B] p-5 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 mb-8">
             <div className="flex gap-3 p-3 mb-5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
@@ -238,12 +268,12 @@ export default function Home() {
 
             <button
               onClick={handleOrder} disabled={loading}
-              className="w-full py-4 rounded-xl bg-[#1E90FF] hover:bg-[#1a7fd6] text-white font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95"
+              className="w-full py-4 rounded-xl bg-[#1E90FF] hover:bg-[#1a7fd6] text-white font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95 disabled:opacity-50"
             >
               {loading && <Loader2 className="animate-spin" size={20} />}
               {loading ? 'Processing...' : 'Pay & Order Now'}
             </button>
-            {message && <p className="mt-4 text-center text-sm font-bold p-2 bg-slate-100 dark:bg-slate-900 rounded-lg">{message}</p>}
+            {message && <p className="mt-4 text-center text-sm font-bold p-2 bg-slate-100 dark:bg-[#0A1931] rounded-lg">{message}</p>}
           </div>
 
           {/* Community Board */}
