@@ -52,7 +52,6 @@ export default function App() {
   const PRICE_PER_DRUM = 3.0;
   const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!;
 
-  // 1. Load User & Set Initial Tab
   useEffect(() => {
     const savedUser = localStorage.getItem('waternow_user');
     if (savedUser) {
@@ -63,7 +62,6 @@ export default function App() {
     setCheckingAuth(false);
   }, []);
 
-  // 2. Fetch Data when user loads
   useEffect(() => {
     if (user) {
       fetchHostels();
@@ -71,7 +69,6 @@ export default function App() {
       fetchSuggestions();
       fetchMyOrders(user);
       
-      // Driver Alert Polling (Checks for new orders every 15 seconds)
       let interval: NodeJS.Timeout;
       if (user.role === 'driver') {
         interval = setInterval(() => {
@@ -145,7 +142,6 @@ export default function App() {
     if (data) setMyOrders(data);
   }
 
-  // Driver Alert System (Simple Polling)
   async function checkForNewOrders(currentUser: any) {
     const { data } = await supabase
       .from('orders')
@@ -154,7 +150,6 @@ export default function App() {
       .eq('status', 'paid');
       
     if (data && data.length > myOrders.length) {
-      // Play a sound and show an alert
       alert("🚨 NEW ORDER RECEIVED! 🚨\nCheck your dashboard to see the details.");
       fetchMyOrders(currentUser);
     }
@@ -407,4 +402,6 @@ export default function App() {
                     <p className="text-slate-500 font-medium">No {user.role === 'student' ? 'orders' : 'deliveries'} yet.</p>
                   </div>
                 ) : (
-                  <div classN
+                  <div className="space-y-4">
+                    {myOrders.map((order) => (
+                      <div key={order.id} className="flex flex-col p-4 bg-slate-50 dark:bg-[#0A1931] rounded-xl border border-slate-200 dark:border-slate-700/50
