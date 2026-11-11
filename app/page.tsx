@@ -3,20 +3,19 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Crown, Shield, Sun, Moon, LogOut, Home, User, MessageSquare, 
-  ThumbsUp, Phone, MapPin, Droplet, Calendar, Sparkles, Lock, CheckCircle2, Truck
+  ThumbsUp, Phone, MapPin, Droplet, Calendar, Sparkles, Lock, CheckCircle2, Truck 
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
-// Supabase Client Setup using your Live Credentials
+// Supabase Client Initialization
 const SUPABASE_URL = 'https://udhzthqswvgbklmhkmzj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHp0aHFzd3ZnYmtsbWtobXpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM3MTI4NDksImV4cCI6MjEwOTI4ODg0OX0.E-r7y4RVq9sNfGcl2e7N25oRnuoWfdlVgteP3mtmUfQ';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Global Paystack Type Declaration
+// Paystack SDK declaration
 declare const PaystackPop: any;
 
 interface UserProfile {
-  id?: string;
   fullName: string;
   phone: string;
   role: 'student' | 'driver' | 'admin';
@@ -47,19 +46,16 @@ interface Suggestion {
 }
 
 export default function WaterNowApp() {
-  // Appearance Theme Toggle
   const [darkMode, setDarkMode] = useState<boolean>(true);
-
-  // Authentication & Persistent User State
   const [user, setUser] = useState<UserProfile | null>(null);
   const [inputName, setInputName] = useState<string>('');
   const [inputPhone, setInputPhone] = useState<string>('');
   const [inputRole, setInputRole] = useState<'student' | 'driver'>('student');
 
-  // Active Navigation Tab: 'order' | 'space' | 'community' | 'admin'
+  // Navigation: 'order' | 'space' | 'community' | 'admin'
   const [activeTab, setActiveTab] = useState<'order' | 'space' | 'community' | 'admin'>('order');
 
-  // Dynamic Hostel Management (ALL CAPS Storage)
+  // Hostels State (ALL CAPS)
   const [hostels, setHostels] = useState<string[]>([
     'UDS CENTRAL HOSTEL',
     'NYANKPALA CAMPUS HALL',
@@ -69,77 +65,46 @@ export default function WaterNowApp() {
   const [selectedHostel, setSelectedHostel] = useState<string>('UDS CENTRAL HOSTEL');
   const [customHostelInput, setCustomHostelInput] = useState<string>('');
 
-  // Drivers Configuration & Dynamic Network State
+  // Drivers Network
   const [driversList, setDriversList] = useState<Array<{ name: string; phone: string }>>([
     { name: 'Driver Alhassan (Tanker 1)', phone: '0240000001' },
     { name: 'Driver Yakubu (Tanker 2)', phone: '0240000002' }
   ]);
   const [selectedDriverPhone, setSelectedDriverPhone] = useState<string>('0240000001');
 
-  // Pricing Model Configuration
-  const UNIT_PRICE = 3.00; // GHS 3.00 total per drum
-  const PLATFORM_FEE_PER_DRUM = 0.50; // GHS 0.50 to Amanah Tech
-  const DRIVER_PAYOUT_PER_DRUM = 2.50; // GHS 2.50 to Driver
+  // Pricing Model
+  const UNIT_PRICE = 3.00;
+  const PLATFORM_FEE_PER_DRUM = 0.50;
+  const DRIVER_PAYOUT_PER_DRUM = 2.50;
 
   const [drums, setDrums] = useState<number>(1);
   const [autoSub, setAutoSub] = useState<string>('none');
 
-  // System Orders & Community Board State
   const [orders, setOrders] = useState<Order[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([
-    { id: 1, title: 'We need an inter-city bus booking app from Nyankpala to Kumasi/Accra!', votes: 38 },
-    { id: 2, title: 'Extend tanker delivery hours till 10 PM during exam weeks.', votes: 21 }
+    { id: 1, title: 'We need inter-city bus booking from Nyankpala to Kumasi/Accra!', votes: 42 },
+    { id: 2, title: 'Expand water supply hours until 10 PM during exam season.', votes: 25 }
   ]);
   const [newSuggestion, setNewSuggestion] = useState<string>('');
-
-  // Admin Security Unlock Input
   const [adminPasswordInput, setAdminPasswordInput] = useState<string>('');
 
-  // 1. Initial Loading & Session Restoration
+  // Session Restoration on Load
   useEffect(() => {
     const savedUser = localStorage.getItem('amanah_water_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    const savedOrders = localStorage.getItem('amanah_water_orders');
-    if (savedOrders) {
-      setOrders(JSON.parse(savedOrders));
-    }
-    const savedHostels = localStorage.getItem('amanah_water_hostels');
-    if (savedHostels) {
-      setHostels(JSON.parse(savedHostels));
-    }
+    if (savedUser) setUser(JSON.parse(savedUser));
 
-    // Direct Admin Query Check (?admin=true)
+    const savedOrders = localStorage.getItem('amanah_water_orders');
+    if (savedOrders) setOrders(JSON.parse(savedOrders));
+
+    const savedHostels = localStorage.getItem('amanah_water_hostels');
+    if (savedHostels) setHostels(JSON.parse(savedHostels));
+
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('admin') === 'true') {
       setActiveTab('admin');
     }
-
-    // Fetch live drivers & orders from Supabase if connected
-    fetchSupabaseData();
   }, []);
 
-  const fetchSupabaseData = async () => {
-    try {
-      // Sync profiles to fetch drivers
-      const { data: profilesData } = await supabase.from('profiles').select('*').eq('role', 'driver');
-      if (profilesData && profilesData.length > 0) {
-        const fetchedDrivers = profilesData.map(p => ({ name: p.full_name, phone: p.phone }));
-        setDriversList(prev => {
-          const combined = [...prev];
-          fetchedDrivers.forEach(fd => {
-            if (!combined.some(c => c.phone === fd.phone)) combined.push(fd);
-          });
-          return combined;
-        });
-      }
-    } catch (err) {
-      console.log('Using resilient local database mode.');
-    }
-  };
-
-  // 2. Persistent Login Handler
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputName.trim() || !inputPhone.trim()) {
@@ -151,26 +116,22 @@ export default function WaterNowApp() {
       fullName: inputName.trim(),
       phone: inputPhone.trim(),
       role: inputRole,
-      refCode: refCode
+      refCode
     };
 
     setUser(newUser);
     localStorage.setItem('amanah_water_user', JSON.stringify(newUser));
 
-    // Async sync to Supabase database
     try {
       await supabase.from('profiles').upsert([
         { full_name: newUser.fullName, phone: newUser.phone, role: newUser.role }
       ], { onConflict: 'phone' });
     } catch (err) {
-      console.log('Profile saved locally.');
+      console.log('Saved to local fallback.');
     }
 
-    if (inputRole === 'driver') {
-      setActiveTab('space');
-    } else {
-      setActiveTab('order');
-    }
+    if (inputRole === 'driver') setActiveTab('space');
+    else setActiveTab('order');
   };
 
   const handleLogout = () => {
@@ -179,7 +140,6 @@ export default function WaterNowApp() {
     setActiveTab('order');
   };
 
-  // 3. Dynamic Hostel Auto-Save Engine (ALL CAPS)
   const handleAddHostel = () => {
     const formatted = customHostelInput.trim().toUpperCase();
     if (!formatted) return;
@@ -196,7 +156,6 @@ export default function WaterNowApp() {
     }
   };
 
-  // 4. Paystack Payment Checkout & Split Logic
   const triggerPaystack = () => {
     if (!user) return;
     const totalPrice = drums * UNIT_PRICE;
@@ -211,13 +170,13 @@ export default function WaterNowApp() {
     let handler = PaystackPop.setup({
       key: 'pk_live_b0f896380e67a59dc530e54d85b8ac76a6070fd4',
       email: `${user.phone}@amanahtechgh.com`,
-      amount: totalPrice * 100, // Amount in Pesewas
+      amount: totalPrice * 100,
       currency: 'GHS',
       callback: function(response: any) {
         processSuccessfulPayment(response.reference);
       },
       onClose: function() {
-        console.log('Checkout closed.');
+        console.log('Payment window closed.');
       }
     });
     handler.openIframe();
@@ -233,7 +192,7 @@ export default function WaterNowApp() {
       hostel: selectedHostel,
       driverPhone: selectedDriverPhone,
       driverName: matchedDriver ? matchedDriver.name : 'Assigned Driver',
-      drums: drums,
+      drums,
       unitPrice: UNIT_PRICE,
       totalPrice: drums * UNIT_PRICE,
       platformFee: drums * PLATFORM_FEE_PER_DRUM,
@@ -247,7 +206,6 @@ export default function WaterNowApp() {
     setOrders(updated);
     localStorage.setItem('amanah_water_orders', JSON.stringify(updated));
 
-    // Sync order to Supabase PostgreSQL table
     try {
       await supabase.from('orders').insert([
         {
@@ -266,16 +224,15 @@ export default function WaterNowApp() {
       console.log('Order synced locally.');
     }
 
-    alert(`Payment Successful! Order dispatched. Paystack Ref: ${ref}`);
+    alert(`Payment Successful! Order dispatched. Ref: ${ref}`);
     setActiveTab('space');
   };
 
-  // 5. Escrow Release & Driver Actions
   const confirmDelivery = (orderId: number) => {
     const updated = orders.map(o => o.id === orderId ? { ...o, status: 'delivered' as const } : o);
     setOrders(updated);
     localStorage.setItem('amanah_water_orders', JSON.stringify(updated));
-    alert('Escrow funds released to driver partner!');
+    alert('Escrow funds released to driver partner successfully!');
   };
 
   const updateDriverStatus = (orderId: number, newStatus: 'delivering' | 'delivered') => {
@@ -284,21 +241,19 @@ export default function WaterNowApp() {
     localStorage.setItem('amanah_water_orders', JSON.stringify(updated));
   };
 
-  // Admin Manual Dispatch for Non-Smartphone Drivers
   const adminDispatchOrder = (orderId: number, driverPhone: string) => {
     const matched = driversList.find(d => d.phone === driverPhone);
     const updated = orders.map(o => o.id === orderId ? { 
       ...o, 
-      driverPhone: driverPhone, 
+      driverPhone, 
       driverName: matched ? matched.name : 'Assigned Driver',
       status: 'delivering' as const 
     } : o);
     setOrders(updated);
     localStorage.setItem('amanah_water_orders', JSON.stringify(updated));
-    alert(`Order #${orderId} manually assigned & dispatched to driver (${driverPhone}).`);
+    alert(`Order #${orderId} manually dispatched to driver.`);
   };
 
-  // Community Board Votes & Submit
   const handleVote = (id: number) => {
     setSuggestions(suggestions.map(s => s.id === id ? { ...s, votes: s.votes + 1 } : s));
   };
@@ -310,7 +265,6 @@ export default function WaterNowApp() {
     setNewSuggestion('');
   };
 
-  // Admin Verification Unlock
   const verifyAdmin = (e: React.FormEvent) => {
     e.preventDefault();
     if (adminPasswordInput === 'OHU2026') {
@@ -322,22 +276,22 @@ export default function WaterNowApp() {
       setActiveTab('admin');
       setAdminPasswordInput('');
     } else {
-      alert('Access Denied. Incorrect Founder Password.');
+      alert('Access Denied. Incorrect Master Password.');
     }
   };
 
   return (
-    <div className={darkMode ? 'bg-[#0A1931] text-slate-100 min-h-screen flex flex-col justify-between font-sans antialiased' : 'bg-slate-100 text-slate-950 min-h-screen flex flex-col justify-between font-sans antialiased'}>
+    <div className="bg-[#0A1931] text-slate-100 min-h-screen flex flex-col justify-between font-sans selection:bg-[#FFD700] selection:text-[#0A1931]">
       
-      {/* APP TOP HEADER */}
-      <header className={`sticky top-0 z-50 backdrop-blur-md border-b px-4 py-3 shadow-2xl ${darkMode ? 'bg-[#0A1931]/90 border-[#FFD700]/30' : 'bg-white/90 border-slate-200'}`}>
+      {/* STICKY TOP HEADER */}
+      <header className="sticky top-0 z-50 backdrop-blur-md bg-[#0A1931]/90 border-b border-[#FFD700]/30 px-4 py-3 shadow-2xl">
         <div className="max-w-md mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 via-yellow-400 to-amber-600 flex items-center justify-center text-[#0A1931] font-black shadow-lg">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 via-yellow-400 to-amber-600 flex items-center justify-center text-[#0A1931] font-black shadow-lg shadow-amber-500/20">
               <Crown className="w-6 h-6 text-[#0A1931]" />
             </div>
             <div>
-              <h1 className="text-base font-black tracking-tight leading-none text-amber-400">AMANAH TECH</h1>
+              <h1 className="text-base font-black tracking-tight leading-none text-[#FFD700]">AMANAH TECH</h1>
               <p className="text-[9px] text-slate-300 font-bold tracking-widest uppercase mt-0.5">WaterNow • Royal Service, Trusted Always</p>
             </div>
           </div>
@@ -346,13 +300,6 @@ export default function WaterNowApp() {
             {user && (
               <span className="text-xs font-bold text-amber-300 hidden sm:inline">Hi, {user.fullName} 👑</span>
             )}
-            <button 
-              onClick={() => setDarkMode(!darkMode)}
-              className={`p-2 rounded-xl border transition ${darkMode ? 'bg-[#13294B] border-slate-700 text-amber-400' : 'bg-slate-200 border-slate-300 text-slate-800'}`}
-              title="Toggle Dark/Light Theme"
-            >
-              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
             {user && (
               <button 
                 onClick={handleLogout}
@@ -366,15 +313,15 @@ export default function WaterNowApp() {
         </div>
       </header>
 
-      {/* MAIN CONTENT AREA */}
+      {/* MAIN CONTAINER */}
       <main className="w-full max-w-md mx-auto p-4 flex-grow space-y-4">
 
-        {/* 1. FRICTIONLESS LOGIN / SETUP SCREEN */}
+        {/* SETUP LOGIN SCREEN */}
         {!user ? (
-          <div className={`backdrop-blur-xl border rounded-3xl p-6 shadow-2xl space-y-5 ${darkMode ? 'bg-[#13294B]/90 border-[#FFD700]/30' : 'bg-white border-slate-200'}`}>
+          <div className="backdrop-blur-xl bg-[#13294B]/90 border border-[#FFD700]/30 rounded-3xl p-6 shadow-2xl space-y-5 shadow-black/60">
             <div className="text-center space-y-2">
-              <span className="inline-block text-[10px] font-bold uppercase tracking-widest text-amber-400 bg-amber-950/60 border border-amber-800/50 px-3 py-1 rounded-full">
-                WaterNow: Royal Service, Trusted Always
+              <span className="inline-block text-[10px] font-bold uppercase tracking-widest text-[#FFD700] bg-amber-950/70 border border-amber-800/50 px-3 py-1 rounded-full">
+                Secure Regional Infrastructure
               </span>
               <h2 className="text-2xl font-black tracking-tight text-white">WaterNow Tamale</h2>
               <p className="text-xs text-slate-300 max-w-[260px] mx-auto">
@@ -391,7 +338,7 @@ export default function WaterNowApp() {
                   onChange={(e) => setInputName(e.target.value)}
                   placeholder="e.g. Fuseini Ibrahim" 
                   required
-                  className={`w-full border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:border-[#1E90FF] transition shadow-inner ${darkMode ? 'bg-[#0A1931] border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
+                  className="w-full bg-[#0A1931] border border-slate-700 rounded-2xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-[#1E90FF] transition shadow-inner"
                 />
               </div>
 
@@ -403,7 +350,7 @@ export default function WaterNowApp() {
                   onChange={(e) => setInputPhone(e.target.value)}
                   placeholder="024XXXXXXX" 
                   required
-                  className={`w-full border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:border-[#1E90FF] transition shadow-inner ${darkMode ? 'bg-[#0A1931] border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
+                  className="w-full bg-[#0A1931] border border-slate-700 rounded-2xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-[#1E90FF] transition shadow-inner"
                 />
               </div>
 
@@ -412,7 +359,7 @@ export default function WaterNowApp() {
                 <select 
                   value={inputRole}
                   onChange={(e) => setInputRole(e.target.value as 'student' | 'driver')}
-                  className={`w-full border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:border-[#1E90FF] transition shadow-inner ${darkMode ? 'bg-[#0A1931] border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
+                  className="w-full bg-[#0A1931] border border-slate-700 rounded-2xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-[#1E90FF] transition shadow-inner"
                 >
                   <option value="student">Student / Resident (Customer)</option>
                   <option value="driver">Tanker Driver Partner</option>
@@ -427,19 +374,19 @@ export default function WaterNowApp() {
               </button>
             </form>
 
-            {/* Secret Founder Admin Login */}
+            {/* Hidden Founder Login Box */}
             <div className="pt-4 border-t border-slate-700/60">
               <form onSubmit={verifyAdmin} className="space-y-2">
-                <label className="block text-[10px] font-bold text-amber-400 uppercase tracking-wider">Founder Console Access</label>
+                <label className="block text-[10px] font-bold text-[#FFD700] uppercase tracking-wider">Founder Console Access</label>
                 <div className="flex space-x-2">
                   <input 
                     type="password" 
                     value={adminPasswordInput}
                     onChange={(e) => setAdminPasswordInput(e.target.value)}
                     placeholder="Master Password (OHU2026)..." 
-                    className={`flex-1 border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-amber-400 ${darkMode ? 'bg-[#0A1931] border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-950'}`}
+                    className="flex-1 bg-[#0A1931] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#FFD700]"
                   />
-                  <button type="submit" className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2 rounded-xl text-xs transition">
+                  <button type="submit" className="bg-[#FFD700] hover:bg-amber-400 text-slate-950 font-black px-4 py-2 rounded-xl text-xs transition">
                     Unlock
                   </button>
                 </div>
@@ -447,36 +394,35 @@ export default function WaterNowApp() {
             </div>
           </div>
         ) : (
-          /* LOGGED IN USER INTERFACE */
           <>
             {/* TAB 1: ORDER FORM */}
             {activeTab === 'order' && user.role !== 'admin' && (
               <div className="space-y-4">
                 {/* Escrow Shield Banner */}
-                <div className="bg-amber-950/50 border border-amber-600/40 rounded-3xl p-4 flex items-start space-x-3.5 shadow-xl">
+                <div className="bg-amber-950/60 border border-amber-600/40 rounded-3xl p-4 flex items-start space-x-3.5 shadow-xl">
                   <Shield className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
                   <div className="text-xs space-y-1">
                     <span className="font-black text-amber-400 uppercase tracking-wider">Escrow Protection Active</span>
                     <p className="text-slate-300 leading-relaxed">
-                      Money is held securely. Driver gets paid GHS 2.50 only after you click 'Confirm Delivery'.
+                      Money is held securely. Driver gets paid GHS 2.50 only after you confirm successful delivery.
                     </p>
                   </div>
                 </div>
 
                 {/* Main Order Form Card */}
-                <div className={`backdrop-blur-xl border rounded-3xl p-5 space-y-4 shadow-2xl ${darkMode ? 'bg-[#13294B]/90 border-[#FFD700]/20' : 'bg-white border-slate-200'}`}>
-                  <h3 className="font-bold text-sm text-amber-300 border-b border-slate-700/60 pb-3 flex items-center justify-between">
+                <div className="backdrop-blur-xl bg-[#13294B]/90 border border-[#FFD700]/20 rounded-3xl p-5 space-y-4 shadow-2xl">
+                  <h3 className="font-bold text-sm text-[#FFD700] border-b border-slate-700/60 pb-3 flex items-center justify-between">
                     <span>Order Water Delivery</span>
                     <span className="text-[10px] bg-amber-950 text-amber-300 px-2.5 py-1 rounded-full border border-amber-800">GHS {UNIT_PRICE.toFixed(2)} / Drum</span>
                   </h3>
 
-                  {/* Hostel Select & Custom Addition */}
+                  {/* Hostel Selection & Custom Addition */}
                   <div className="space-y-2">
                     <label className="block text-xs font-bold text-slate-200">Select Hostel / Location</label>
                     <select 
                       value={selectedHostel}
                       onChange={(e) => setSelectedHostel(e.target.value)}
-                      className={`w-full border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#1E90FF] ${darkMode ? 'bg-[#0A1931] border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
+                      className="w-full bg-[#0A1931] border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#1E90FF]"
                     >
                       {hostels.map((h, idx) => (
                         <option key={idx} value={h}>{h}</option>
@@ -489,7 +435,7 @@ export default function WaterNowApp() {
                         value={customHostelInput}
                         onChange={(e) => setCustomHostelInput(e.target.value)}
                         placeholder="Type new hostel name..." 
-                        className={`flex-1 border rounded-xl px-3 py-2 text-xs uppercase focus:outline-none focus:border-[#1E90FF] ${darkMode ? 'bg-[#0A1931] border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
+                        className="flex-1 bg-[#0A1931] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white uppercase focus:outline-none focus:border-[#1E90FF]"
                       />
                       <button 
                         type="button" 
@@ -501,13 +447,13 @@ export default function WaterNowApp() {
                     </div>
                   </div>
 
-                  {/* Tanker Partner Selection */}
+                  {/* Driver Selection */}
                   <div>
                     <label className="block text-xs font-bold text-slate-200 mb-1.5">Select Tanker Partner</label>
                     <select 
                       value={selectedDriverPhone}
                       onChange={(e) => setSelectedDriverPhone(e.target.value)}
-                      className={`w-full border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#1E90FF] ${darkMode ? 'bg-[#0A1931] border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
+                      className="w-full bg-[#0A1931] border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#1E90FF]"
                     >
                       {driversList.map((d, idx) => (
                         <option key={idx} value={d.phone}>{d.name} ({d.phone})</option>
@@ -525,7 +471,7 @@ export default function WaterNowApp() {
                         max="20"
                         value={drums} 
                         onChange={(e) => setDrums(parseInt(e.target.value) || 1)}
-                        className={`w-full border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#1E90FF] ${darkMode ? 'bg-[#0A1931] border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
+                        className="w-full bg-[#0A1931] border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#1E90FF]"
                       />
                     </div>
                     <div>
@@ -533,7 +479,7 @@ export default function WaterNowApp() {
                       <select 
                         value={autoSub} 
                         onChange={(e) => setAutoSub(e.target.value)}
-                        className={`w-full border rounded-2xl px-3 py-3 text-sm focus:outline-none focus:border-[#1E90FF] ${darkMode ? 'bg-[#0A1931] border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
+                        className="w-full bg-[#0A1931] border border-slate-700 rounded-2xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#1E90FF]"
                       >
                         <option value="none">One-time Order</option>
                         <option value="every_2_days">Every 2 Days</option>
@@ -543,19 +489,19 @@ export default function WaterNowApp() {
                     </div>
                   </div>
 
-                  {/* Price Calculation */}
-                  <div className={`p-4 rounded-2xl border space-y-1.5 ${darkMode ? 'bg-[#0A1931] border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                  {/* Price Calculation Card */}
+                  <div className="bg-[#0A1931] border border-slate-800 p-4 rounded-2xl space-y-1.5">
                     <div className="flex justify-between text-xs text-slate-400">
                       <span>Driver Payout (GHS 2.50 x {drums})</span>
                       <span>GHS {(drums * DRIVER_PAYOUT_PER_DRUM).toFixed(2)}</span>
                     </div>
-                    <div class="flex justify-between text-xs text-slate-400">
+                    <div className="flex justify-between text-xs text-slate-400">
                       <span>Amanah Platform Fee (GHS 0.50 x {drums})</span>
                       <span>GHS {(drums * PLATFORM_FEE_PER_DRUM).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center pt-2 border-t border-slate-800">
                       <span className="text-xs uppercase font-bold text-slate-300">Total Payable</span>
-                      <h2 className="text-2xl font-black text-amber-400">GHS {(drums * UNIT_PRICE).toFixed(2)}</h2>
+                      <h2 className="text-2xl font-black text-[#FFD700]">GHS {(drums * UNIT_PRICE).toFixed(2)}</h2>
                     </div>
                   </div>
 
@@ -572,19 +518,18 @@ export default function WaterNowApp() {
             {/* TAB 2: MY SPACE / PRIVATE DASHBOARD */}
             {activeTab === 'space' && (
               <div className="space-y-4">
-                <div className={`backdrop-blur-xl border rounded-3xl p-5 shadow-xl flex items-center justify-between ${darkMode ? 'bg-[#13294B]/90 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className="backdrop-blur-xl bg-[#13294B]/90 border border-slate-700 rounded-3xl p-5 shadow-xl flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-base text-white">{user.fullName}</h3>
-                    <p className="text-xs text-amber-400 font-mono capitalize">Role: {user.role} | {user.phone}</p>
+                    <p className="text-xs text-[#FFD700] font-mono capitalize">Role: {user.role} | {user.phone}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">Referral Code: <span className="text-amber-300 font-bold">{user.refCode}</span></p>
                   </div>
                   <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs px-3 py-1.5 rounded-xl font-bold">
-                    Logged In
+                    Active Session
                   </span>
                 </div>
 
-                {/* History & Escrow List */}
-                <div className={`backdrop-blur-xl border rounded-3xl p-5 space-y-3 shadow-2xl ${darkMode ? 'bg-[#13294B]/90 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className="backdrop-blur-xl bg-[#13294B]/90 border border-slate-700 rounded-3xl p-5 space-y-3 shadow-2xl">
                   <h3 className="font-bold text-sm text-white border-b border-slate-700 pb-2">
                     {user.role === 'driver' ? 'Assigned Driver Deliveries' : 'My Orders & Escrow Release'}
                   </h3>
@@ -594,7 +539,7 @@ export default function WaterNowApp() {
                       <p className="text-slate-400 text-center py-6">No orders recorded in your private space.</p>
                     ) : (
                       orders.map((o) => (
-                        <div key={o.id} className={`p-4 rounded-2xl border space-y-2 ${darkMode ? 'bg-[#0A1931] border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                        <div key={o.id} className="p-4 bg-[#0A1931] border border-slate-800 rounded-2xl space-y-2">
                           <div className="flex justify-between font-bold">
                             <span className="text-white">{o.drums} Water Drum(s)</span>
                             <span className={`px-2.5 py-0.5 rounded-full text-[10px] uppercase font-extrabold ${
@@ -670,7 +615,7 @@ export default function WaterNowApp() {
             {/* TAB 3: COMMUNITY BOARD */}
             {activeTab === 'community' && (
               <div className="space-y-4">
-                <div className={`backdrop-blur-xl border rounded-3xl p-5 space-y-4 shadow-2xl ${darkMode ? 'bg-[#13294B]/90 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className="backdrop-blur-xl bg-[#13294B]/90 border border-slate-700 rounded-3xl p-5 space-y-4 shadow-2xl">
                   <div>
                     <h3 className="font-bold text-sm text-white">Community Board - Drop your problem, we solve it.</h3>
                     <p className="text-xs text-slate-300">Tell us what regional problems to solve next.</p>
@@ -682,7 +627,7 @@ export default function WaterNowApp() {
                       value={newSuggestion}
                       onChange={(e) => setNewSuggestion(e.target.value)}
                       placeholder="e.g. We need bus bookings to Kumasi..." 
-                      className={`w-full border rounded-2xl p-3 text-xs focus:outline-none focus:border-[#1E90FF] ${darkMode ? 'bg-[#0A1931] border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
+                      className="w-full bg-[#0A1931] border border-slate-700 rounded-2xl p-3 text-xs text-white focus:outline-none focus:border-[#1E90FF]"
                     />
                     <button type="submit" className="w-full bg-[#1E90FF] hover:bg-blue-600 text-white font-bold py-2.5 rounded-xl text-xs transition">
                       Post Idea 💡
@@ -691,11 +636,11 @@ export default function WaterNowApp() {
 
                   <div className="space-y-2.5 pt-2">
                     {suggestions.map((item) => (
-                      <div key={item.id} className={`p-3.5 rounded-2xl border flex items-center justify-between ${darkMode ? 'bg-[#0A1931] border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                      <div key={item.id} className="p-3.5 bg-[#0A1931] border border-slate-800 rounded-2xl flex items-center justify-between">
                         <p className="text-xs text-slate-200 pr-2">{item.title}</p>
                         <button 
                           onClick={() => handleVote(item.id)}
-                          className="flex items-center space-x-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-amber-500/30 transition flex-shrink-0"
+                          className="flex items-center space-x-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-amber-500/35 transition flex-shrink-0"
                         >
                           <ThumbsUp className="w-3.5 h-3.5" />
                           <span>{item.votes}</span>
@@ -707,14 +652,14 @@ export default function WaterNowApp() {
               </div>
             )}
 
-            {/* ADMIN DISPATCH CENTER & METRICS */}
+            {/* FOUNDER DISPATCH CENTER (ADMIN) */}
             {activeTab === 'admin' && (
               <div className="space-y-4">
-                <div className={`backdrop-blur-xl border rounded-3xl p-6 space-y-5 shadow-2xl ${darkMode ? 'bg-[#13294B]/90 border-amber-500/40' : 'bg-white border-slate-200'}`}>
+                <div className="backdrop-blur-xl bg-[#13294B]/90 border border-[#FFD700]/40 rounded-3xl p-6 space-y-5 shadow-2xl">
                   <div className="flex items-center justify-between border-b border-slate-700 pb-3">
                     <div>
-                      <h2 class="text-xl font-black text-white">Founder Dispatch Center 👑</h2>
-                      <p className="text-xs text-amber-400 font-bold">Manual Driver Dispatch & Platform Revenue</p>
+                      <h2 className="text-xl font-black text-white">Founder Dispatch Center 👑</h2>
+                      <p className="text-xs text-[#FFD700] font-bold">Manual Driver Dispatch & Platform Revenue</p>
                     </div>
                     <button 
                       onClick={() => setActiveTab('order')}
@@ -726,104 +671,7 @@ export default function WaterNowApp() {
 
                   {/* Financial Metrics */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-[#0A1931] border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className="bg-[#0A1931] border border-slate-800 p-4 rounded-2xl">
                       <span className="text-[10px] text-slate-400 font-bold uppercase">Gross Transact Volume</span>
-                      <h3 className="text-xl font-black text-amber-400 mt-1">
-                        GHS {orders.reduce((acc, o) => acc + o.totalPrice, 0).toFixed(2)}
-                      </h3>
-                    </div>
-                    <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-[#0A1931] border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase">Amanah 50p Cut</span>
-                      <h3 className="text-xl font-black text-amber-400 mt-1">
-                        GHS {orders.reduce((acc, o) => acc + o.platformFee, 0).toFixed(2)}
-                      </h3>
-                    </div>
-                  </div>
-
-                  {/* Manual Dispatch Engine for Non-Smartphone Drivers */}
-                  <div className="space-y-3 border-t border-slate-700/80 pt-4">
-                    <h3 className="font-bold text-xs text-white uppercase tracking-wider">Manual Dispatch Feed (For Non-Smartphone Drivers)</h3>
-                    <div className="space-y-2 text-xs">
-                      {orders.filter(o => o.status === 'paid').length === 0 ? (
-                        <p className="text-slate-400 text-center py-3">No pending paid orders to dispatch.</p>
-                      ) : (
-                        orders.filter(o => o.status === 'paid').map(o => (
-                          <div key={o.id} className="p-3 bg-[#0A1931] rounded-2xl border border-slate-800 space-y-2">
-                            <div className="flex justify-between font-bold text-white">
-                              <span>Order #{o.id} ({o.drums} Drums)</span>
-                              <span className="text-amber-400">GHS {o.totalPrice.toFixed(2)}</span>
-                            </div>
-                            <p className="text-slate-300">Student: {o.studentName} ({o.studentPhone})</p>
-                            <p className="text-slate-300">Hostel: {o.hostel}</p>
-
-                            <div className="flex space-x-2 pt-1">
-                              <a 
-                                href={`tel:${selectedDriverPhone}`}
-                                className="flex-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-center py-2 rounded-xl font-bold"
-                              >
-                                📞 Call Driver Now
-                              </a>
-                              <button 
-                                onClick={() => adminDispatchOrder(o.id, selectedDriverPhone)}
-                                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-xl"
-                              >
-                                Dispatch Order 🚀
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </main>
-
-      {/* BOTTOM NAVIGATION BAR */}
-      {user && user.role !== 'admin' && (
-        <nav className={`sticky bottom-0 z-50 backdrop-blur-md border-t px-6 py-3 shadow-2xl ${darkMode ? 'bg-[#0A1931]/95 border-slate-800' : 'bg-white/95 border-slate-200'}`}>
-          <div className="max-w-md mx-auto flex justify-around items-center">
-            <button 
-              onClick={() => setActiveTab('order')}
-              className={`flex flex-col items-center space-y-1 transition ${activeTab === 'order' ? 'text-[#1E90FF]' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              <Home className="w-5 h-5" />
-              <span className="text-[10px] font-bold">Order</span>
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('space')}
-              className={`flex flex-col items-center space-y-1 transition ${activeTab === 'space' ? 'text-[#1E90FF]' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              <User className="w-5 h-5" />
-              <span className="text-[10px] font-bold">My Space</span>
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('community')}
-              className={`flex flex-col items-center space-y-1 transition ${activeTab === 'community' ? 'text-[#1E90FF]' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              <MessageSquare className="w-5 h-5" />
-              <span className="text-[10px] font-bold">Community</span>
-            </button>
-          </div>
-        </nav>
-      )}
-
-      {/* FOOTER */}
-      <footer className={`border-t p-4 text-center space-y-1 ${darkMode ? 'bg-[#0A1931] border-slate-800 text-slate-400' : 'bg-slate-200 border-slate-300 text-slate-600'}`}>
-        <p className="text-xs font-medium">AMANAH TECH COMPANY • <a href="mailto:support@amanahtechgh.com" className="text-amber-400 underline font-bold">support@amanahtechgh.com</a></p>
-        <div>
-          <button onClick={() => { setActiveTab('admin'); }} className="text-[10px] font-mono text-slate-500 hover:text-amber-400 transition">
-            🔒 Founder Console Portal
-          </button>
-        </div>
-      </footer>
-
-    </div>
-  );
-}
+                      <h3 className="text-xl font-black text-[#FFD700] mt-1">
+                        GHS {orders.reduce((acc, o) => acc
